@@ -3,6 +3,7 @@ import numpy as np
 
 import tf_rl.utils.svg as svg
 
+
 class DoublePendulum(object):
     observation_size = 4
     action_size      = 1
@@ -41,6 +42,7 @@ class DoublePendulum(object):
             to the first joint
         """
         self.state = np.array([0.0, 0.0, 0.0, 0.0])
+        self.state = self.state.reshape((1,4))
         self.control_input = 0.0
         self.params = params
         self.size = (400, 300)
@@ -64,24 +66,24 @@ class DoublePendulum(object):
         state = self.state
 
         dydx = np.zeros_like(state)
-        dydx[0] = state[1]
+        dydx[0,0] = state[0,1]
 
-        del_ = state[2]-state[0]
+        del_ = state[0,2]-state[0,0]
         den1 = (M1+M2)*L1 - M2*L1*np.cos(del_)*np.cos(del_)
-        dydx[1] = (M2*L1*state[1]*state[1]*np.sin(del_)*np.cos(del_)
-                  + M2*G*np.sin(state[2])*np.cos(del_)
-                  + M2*L2*state[3]*state[3]*np.sin(del_)
-                  - (M1+M2)*G*np.sin(state[0])) / den1
-        dydx[1] -= damping * state[1]
+        dydx[0,1] = (M2*L1*state[0,1]*state[0,1]*np.sin(del_)*np.cos(del_)
+                  + M2*G*np.sin(state[0,2])*np.cos(del_)
+                  + M2*L2*state[0,3]*state[0,3]*np.sin(del_)
+                  - (M1+M2)*G*np.sin(state[0,0])) / den1
+        dydx[0,1] -= damping * state[0,1]
 
-        dydx[2] = state[3]
+        dydx[0,2] = state[0,3]
 
         den2 = (L2/L1)*den1
-        dydx[3] = (-M2*L2*state[3]*state[3]*np.sin(del_)*np.cos(del_)
-                   + (M1+M2)*G*np.sin(state[0])*np.cos(del_)
-                   - (M1+M2)*L1*state[1]*state[1]*np.sin(del_)
-                   - (M1+M2)*G*np.sin(state[2]))/den2
-        dydx[3] -= damping * state[3]
+        dydx[0,3] = (-M2*L2*state[0,3]*state[0,3]*np.sin(del_)*np.cos(del_)
+                   + (M1+M2)*G*np.sin(state[0,0])*np.cos(del_)
+                   - (M1+M2)*L1*state[0,1]*state[0,1]*np.sin(del_)
+                   - (M1+M2)*G*np.sin(state[0,2]))/den2
+        dydx[0,3] -= damping * state[0,3]
 
 
         return np.array(dydx)
@@ -109,16 +111,19 @@ class DoublePendulum(object):
         total_length = self.params['l1_m'] + self.params['l2_m']
         target_x, target_y = 0, -total_length
         distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
-        return -distance_to_target / (2.0 * total_length)
+        #abs_vel = abs(self.state[0,1]) + abs(self.state[0,3])
+        #vel_score = math.exp(-abs_vel*5) / 5.0
+        action_cost = -0.01
+        return -distance_to_target / (2.0 * total_length) + action_cost
 
     def joint_positions(self):
         """Returns abosolute positions of both joints in coordinate system
         where center of system is the attachement point"""
-        x1 = self.params['l1_m']  * np.sin(self.state[0])
-        y1 = self.params['l1_m'] * np.cos(self.state[0])
+        x1 = self.params['l1_m']  * np.sin(self.state[0,0])
+        y1 = self.params['l1_m'] * np.cos(self.state[0,0])
 
-        x2 = self.params['l2_m']  * np.sin(self.state[2]) + x1
-        y2 = self.params['l2_m'] * np.cos(self.state[2]) + y1
+        x2 = self.params['l2_m']  * np.sin(self.state[0,2]) + x1
+        y2 = self.params['l2_m'] * np.cos(self.state[0,2]) + y1
 
         return (x1, y1), (x2, y2)
 

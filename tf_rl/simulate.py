@@ -7,7 +7,7 @@ from os.path import join, exists
 from os import makedirs
 
 def simulate(simulation,
-             controller= None,
+             controller=None,
              fps=60,
              visualize_every=1,
              action_every=1,

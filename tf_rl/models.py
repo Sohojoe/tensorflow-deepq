@@ -1,8 +1,14 @@
 import math
 import tensorflow as tf
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation
+from keras.optimizers import SGD, RMSprop, Adam
+from keras import backend as K
+from keras.utils import np_utils
 
 from .utils import base_name
 
+import numpy as np
 
 class Layer(object):
     def __init__(self, input_sizes, output_size, scope):
@@ -45,6 +51,7 @@ class Layer(object):
             sc.reuse_variables()
             return Layer(self.input_sizes, self.output_size, scope=sc)
 
+
 class MLP(object):
     def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None):
         self.input_sizes = input_sizes
@@ -83,8 +90,51 @@ class MLP(object):
 
     def copy(self, scope=None):
         scope = scope or self.scope + "_copy"
-        with tf.variable_scope(scope):
-            nonlinearities = [self.input_nonlinearity] + self.layer_nonlinearities
-            given_layers = [self.input_layer.copy()] + [layer.copy() for layer in self.layers]
-            return MLP(self.input_sizes, self.hiddens, nonlinearities, scope=scope,
-                    given_layers=given_layers)
+        nonlinearities = [self.input_nonlinearity] + self.layer_nonlinearities
+        given_layers = [self.input_layer.copy()] + [layer.copy() for layer in self.layers]
+        return MLP(self.input_sizes, self.hiddens, nonlinearities, scope=scope,
+                given_layers=given_layers)
+
+
+def custom_initialization(shape, scale=0.003, name=None):
+    return K.variable(np.random.uniform(low=-scale, high=scale, size=shape), name=name)
+
+class KERASMLP(object):
+    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None):
+        self.input_sizes = input_sizes
+        self.hiddens = hiddens
+        self.nonlinearities = nonlinearities
+        self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
+        self.scope = scope or "MLP"
+        self.input_weights = weights
+
+        assert len(hiddens) == len(nonlinearities), \
+                "Number of hiddens must be equal to number of nonlinearities"
+
+        self.model = Sequential()
+
+        self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
+        self.model.add(Activation(self.input_nonlinearity))
+        for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
+            self.model.add(Dense(h_to, init='lecun_uniform'))
+            self.model.add(Activation(self.layer_nonlinearities[l_idx]))
+
+        self.model.add(Dense(hiddens[-1], init=custom_initialization))
+        self.model.add(Activation(self.layer_nonlinearities[-1]))
+
+        self.opt = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, clipnorm=0.5)
+        self.model.compile(loss='MSE', optimizer=self.opt)
+        if weights is not None:
+            self.model.set_weights(weights)
+
+    def __call__(self, xs):
+        xs = np.matrix(xs)
+        return self.model.predict([xs], batch_size=len(xs))
+
+    def variables(self):
+        return self.model.get_weights()
+
+    def copy(self, scope=None):
+        return KERASMLP(self.input_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights())
+
+
