@@ -2,6 +2,7 @@ import math
 import tensorflow as tf
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation
+from keras.layers.normalization import BatchNormalization
 from keras.optimizers import SGD, RMSprop, Adam
 from keras import backend as K
 from keras.utils import np_utils
@@ -102,6 +103,10 @@ def custom_initialization(shape, scale=0.003, name=None):
 class KERASMLP(object):
     def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None):
         self.input_sizes = input_sizes
+
+        # if type(self.input_sizes) != list:
+        #     self.input_sizes = [self.input_sizes]
+
         self.hiddens = hiddens
         self.nonlinearities = nonlinearities
         self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
@@ -113,16 +118,20 @@ class KERASMLP(object):
 
         self.model = Sequential()
 
+        self.model.add(BatchNormalization(input_shape=[self.input_sizes]))
+        #self.model.add(Dense(hiddens[0], init="lecun_uniform"))
         self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
         self.model.add(Activation(self.input_nonlinearity))
+        self.model.add(BatchNormalization())
         for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
             self.model.add(Dense(h_to, init='lecun_uniform'))
             self.model.add(Activation(self.layer_nonlinearities[l_idx]))
+            self.model.add(BatchNormalization())
 
         self.model.add(Dense(hiddens[-1], init=custom_initialization))
         self.model.add(Activation(self.layer_nonlinearities[-1]))
 
-        self.opt = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, clipnorm=0.5)
+        self.opt = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
         self.model.compile(loss='MSE', optimizer=self.opt)
         if weights is not None:
             self.model.set_weights(weights)
@@ -135,6 +144,17 @@ class KERASMLP(object):
         return self.model.get_weights()
 
     def copy(self, scope=None):
+        # print '---------------------'
+        # print len(self.model.get_weights())
+        # print '---------------------'
+        # for i, x in enumerate(self.model.get_weights()):
+        #     print len(self.model.get_weights()[i])
+        #     # print x
+        #     if not isinstance(x[0], np.float32):
+        #         print '-- ' + str(len(x[0]))
+        #     print ' '
+        # print '#####################'
+
         return KERASMLP(self.input_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights())
 
 

@@ -41,7 +41,7 @@ class DoublePendulum(object):
             maximum value of angular force applied
             to the first joint
         """
-        self.state = np.array([0.0, 0.0, 0.0, 0.0])
+        self.state = np.array([3.1415, 0.0, 3.1415, 0.0])
         self.state = self.state.reshape((1,4))
         self.control_input = 0.0
         self.params = params
@@ -104,17 +104,32 @@ class DoublePendulum(object):
         """Advance simulation by dt seconds"""
         dstate = self.external_derivatives() + self.control_derivative()
         self.state += dt * dstate
+        self.state[0,0] = self.wrap_angle(self.state[0,0])
+        self.state[0,2] = self.wrap_angle(self.state[0,2])
+
+    def wrap_angle(self, angle):
+        return math.atan2(math.sin(angle), math.cos(angle))
+
+    def distance(self, target_state, current_state):
+        angle_dist = math.fabs(self.wrap_angle((target_state[0]-current_state[0,0])))
+        angle_dist += math.fabs(self.wrap_angle((target_state[2]-current_state[0,2])))
+        vel_dist = np.linalg.norm(target_state[1]-current_state[0,1])
+        vel_dist += np.linalg.norm(target_state[3]-current_state[0,3])
+        return vel_dist + angle_dist
 
     def collect_reward(self):
         """Reward corresponds to how high is the first joint."""
-        _, (x,y) = self.joint_positions()
-        total_length = self.params['l1_m'] + self.params['l2_m']
-        target_x, target_y = 0, -total_length
-        distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
-        #abs_vel = abs(self.state[0,1]) + abs(self.state[0,3])
-        #vel_score = math.exp(-abs_vel*5) / 5.0
-        action_cost = -0.01
-        return -distance_to_target / (2.0 * total_length) + action_cost
+        target_state = np.array([3.141592, 0, 3.141592, 0])
+        distance = self.distance(target_state, self.state)
+        return 100-distance
+        # _, (x,y) = self.joint_positions()
+        # total_length = self.params['l1_m'] + self.params['l2_m']
+        # target_x, target_y = 0, -total_length
+        # distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
+        # #abs_vel = abs(self.state[0,1]) + abs(self.state[0,3])
+        # #vel_score = math.exp(-abs_vel*5) / 5.0
+        # action_cost = -0.01
+        # return -distance_to_target / (2.0 * total_length) + action_cost
 
     def joint_positions(self):
         """Returns abosolute positions of both joints in coordinate system
@@ -131,6 +146,11 @@ class DoublePendulum(object):
         """Visualize"""
         info = info[:]
         info.append("Reward = %.1f" % self.collect_reward())
+        info.append("Joint 1 Angle = %.1f" % self.state[0,0])
+        info.append("Joint 1 Velo  = %.1f" % self.state[0,1])
+        info.append("Joint 2 Angle = %.1f" % self.state[0,2])
+        info.append("Joint 2 Velo  = %.1f" % self.state[0,3])
+        info.append("Control Input = %.1f" % self.control_input)
         joint1, joint2 = self.joint_positions()
 
         total_length = self.params['l1_m'] + self.params['l2_m']

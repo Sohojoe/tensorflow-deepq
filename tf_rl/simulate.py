@@ -81,13 +81,13 @@ def simulate(simulation,
 
         if frame_no % action_every == 0:
             new_observation = simulation.observe()
-            reward          = simulation.collect_reward()
+            reward = simulation.collect_reward()
             # store last transition
             if last_observation is not None:
                 controller.store(last_observation, last_action, reward, new_observation)
 
             # act
-            new_action = controller.action(new_observation)
+            new_action = controller.action(new_observation, action_every * chunk_length_s)
             simulation.perform_action(new_action)
 
             #train
