@@ -85,8 +85,10 @@ class DoublePendulum(object):
                    - (M1+M2)*G*np.sin(state[0,2]))/den2
         dydx[0,3] -= damping * state[0,3]
 
-
         return np.array(dydx)
+
+    def reset(self):
+        self.state = np.array([3.1415, 0.0, 3.1415, 0.0])
 
     def control_derivative(self):
         """Derivative of self.state due to control"""
@@ -119,17 +121,18 @@ class DoublePendulum(object):
 
     def collect_reward(self):
         """Reward corresponds to how high is the first joint."""
-        target_state = np.array([3.141592, 0, 3.141592, 0])
-        distance = self.distance(target_state, self.state)
-        return 100-distance
-        # _, (x,y) = self.joint_positions()
-        # total_length = self.params['l1_m'] + self.params['l2_m']
-        # target_x, target_y = 0, -total_length
-        # distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
+        # target_state = np.array([3.141592, 0, 3.141592, 0])
+        # distance = self.distance(target_state, self.state)
+        action_cost = -0.01 * math.fabs(self.control_input)
+        # return 100 - distance + action_cost
+        _, (x,y) = self.joint_positions()
+        total_length = self.params['l1_m'] + self.params['l2_m']
+        target_x, target_y = 0, -total_length
+        distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
         # #abs_vel = abs(self.state[0,1]) + abs(self.state[0,3])
         # #vel_score = math.exp(-abs_vel*5) / 5.0
         # action_cost = -0.01
-        # return -distance_to_target / (2.0 * total_length) + action_cost
+        return -distance_to_target / (2.0 * total_length) + action_cost
 
     def joint_positions(self):
         """Returns abosolute positions of both joints in coordinate system

@@ -118,15 +118,15 @@ class KERASMLP(object):
 
         self.model = Sequential()
 
-        self.model.add(BatchNormalization(input_shape=[self.input_sizes]))
+        #self.model.add(BatchNormalization(input_shape=[self.input_sizes]))
         #self.model.add(Dense(hiddens[0], init="lecun_uniform"))
         self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
         self.model.add(Activation(self.input_nonlinearity))
-        self.model.add(BatchNormalization())
+        #self.model.add(BatchNormalization())
         for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
             self.model.add(Dense(h_to, init='lecun_uniform'))
             self.model.add(Activation(self.layer_nonlinearities[l_idx]))
-            self.model.add(BatchNormalization())
+            #self.model.add(BatchNormalization())
 
         self.model.add(Dense(hiddens[-1], init=custom_initialization))
         self.model.add(Activation(self.layer_nonlinearities[-1]))

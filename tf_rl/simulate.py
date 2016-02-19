@@ -15,7 +15,8 @@ def simulate(simulation,
              wait=False,
              disable_training=False,
              max_frames=None,
-             save_path=None):
+             save_path=None,
+             reset_every=None):
     """Start the simulation. Performs three tasks
 
         - visualizes simulation in iPython notebook
@@ -115,3 +116,7 @@ def simulate(simulation,
         time_passed = (time.time() - simulation_started_time)
         if wait and (time_should_have_passed > time_passed):
             time.sleep(time_should_have_passed - time_passed)
+
+        # if reset_every is not None:
+        #     simulation.reset()
+        #     frame_iterator
