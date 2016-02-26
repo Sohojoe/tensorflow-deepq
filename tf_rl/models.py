@@ -137,11 +137,22 @@ class KERASMLP(object):
             self.model.set_weights(weights)
 
     def __call__(self, xs):
-        xs = np.matrix(xs)
+        if len(xs) > 1:
+            xs = np.matrix(xs)
+        xs[0,0] = xs[0,0] / np.pi
+        xs[0,1] = xs[0,1] / (2.0 * np.pi)
+        # xs[0,2] = xs[0,2] / np.pi
+        # xs[0,3] = xs[0,3] / 20.0
         return self.model.predict([xs], batch_size=len(xs))
 
     def variables(self):
         return self.model.get_weights()
+
+    def save(self, filepath):
+        self.model.save_weights(filepath, overwrite=False)
+
+    def restore(self, filepath):
+        self.model.load_weights(filepath)
 
     def copy(self, scope=None):
         # print '---------------------'

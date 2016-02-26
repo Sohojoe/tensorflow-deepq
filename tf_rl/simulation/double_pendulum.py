@@ -92,10 +92,16 @@ class DoublePendulum(object):
 
     def control_derivative(self):
         """Derivative of self.state due to control"""
-        return np.array([0., 0., 0., 1.]) * self.control_input
+        return np.array([0., 1., 0., 0.]) * self.control_input
 
     def observe(self):
         """Returns an observation."""
+        # observation = self.state
+        # observation[0,0] = observation[0,0] / math.pi
+        # observation[0,2] = observation[0,2] / math.pi
+        # observation[0,1] = observation[0,1] / 32.0
+        # observation[0,3] = observation[0,3] / 32.0
+        # return observation
         return self.state
 
     def perform_action(self, action):
@@ -117,22 +123,22 @@ class DoublePendulum(object):
         angle_dist += math.fabs(self.wrap_angle((target_state[2]-current_state[0,2])))
         vel_dist = np.linalg.norm(target_state[1]-current_state[0,1])
         vel_dist += np.linalg.norm(target_state[3]-current_state[0,3])
-        return vel_dist + angle_dist
+        return angle_dist + (0.03*vel_dist)
 
     def collect_reward(self):
         """Reward corresponds to how high is the first joint."""
-        # target_state = np.array([3.141592, 0, 3.141592, 0])
-        # distance = self.distance(target_state, self.state)
-        action_cost = -0.01 * math.fabs(self.control_input)
-        # return 100 - distance + action_cost
-        _, (x,y) = self.joint_positions()
-        total_length = self.params['l1_m'] + self.params['l2_m']
-        target_x, target_y = 0, -total_length
-        distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
+        target_state = np.array([3.141592, 0, 3.141592, 0])
+        distance = self.distance(target_state, self.state)
+        action_cost = -0.1 * math.fabs(self.control_input)
+        return (2*math.pi + 4.4 - distance) + action_cost
+        # _, (x,y) = self.joint_positions()
+        # total_length = self.params['l1_m'] + self.params['l2_m']
+        # target_x, target_y = 0, -total_length
+        # distance_to_target = math.sqrt((x-target_x)**2 + (y-target_y)**2)
         # #abs_vel = abs(self.state[0,1]) + abs(self.state[0,3])
         # #vel_score = math.exp(-abs_vel*5) / 5.0
         # action_cost = -0.01
-        return -distance_to_target / (2.0 * total_length) + action_cost
+        # return -distance_to_target / (2.0 * total_length) + action_cost
 
     def joint_positions(self):
         """Returns abosolute positions of both joints in coordinate system

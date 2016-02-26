@@ -6,6 +6,14 @@ from itertools import count
 from os.path import join, exists
 from os import makedirs
 
+import numpy as np
+
+import matplotlib.pyplot as plt
+
+LOG_FILE_DIR = '/home/mderry/tensorflow-deepq/notebooks/logs/pendulum_'
+FILE_EXT = '.png'
+
+
 def simulate(simulation,
              controller=None,
              fps=60,
@@ -14,9 +22,11 @@ def simulate(simulation,
              simulation_resolution=None,
              wait=False,
              disable_training=False,
+             ignore_exploration=False,
              max_frames=None,
              save_path=None,
-             reset_every=None):
+             reset_every=None,
+             visualize=True):
     """Start the simulation. Performs three tasks
 
         - visualizes simulation in iPython notebook
@@ -76,6 +86,9 @@ def simulate(simulation,
 
     frame_iterator = count() if max_frames is None else range(max_frames)
 
+    reward_history = np.array([])
+    reward_mavg_50 = np.array([])
+
     for frame_no in frame_iterator:
         for _ in range(chunks_per_frame):
             simulation.step(chunk_length_s)
@@ -83,17 +96,29 @@ def simulate(simulation,
         if frame_no % action_every == 0:
             new_observation = simulation.observe()
             reward = simulation.collect_reward()
+            reward_history = np.append(reward_history, [reward])
+            if len(reward_history) <= 50:
+                # print 'Sub-50, mean: %f' % (np.mean(reward_history))
+                reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history)])
+            else:
+                # print 'Post-50, mean: %f' % (np.mean(reward_history[-50:]))
+                reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history[-50:])])
+
+            # print reward_mavg_50.shape
+
             # store last transition
             if last_observation is not None:
                 controller.store(last_observation, last_action, reward, new_observation)
 
             # act
-            new_action = controller.action(new_observation, action_every * chunk_length_s)
+            new_action = controller.action(new_observation, action_every * chunk_length_s, ignore_exploration=ignore_exploration)
             simulation.perform_action(new_action)
 
             #train
             if not disable_training:
+                # clear_output(wait=True)
                 controller.training_step()
+
 
             # update current state as last state.
             last_action = new_action
@@ -101,16 +126,20 @@ def simulate(simulation,
 
         # adding 1 to make it less likely to happen at the same time as
         # action taking.
-        if (frame_no + 1) % visualize_every == 0:
-            fps_estimate = frame_no / (time.time() - simulation_started_time)
-            clear_output(wait=True)
-            svg_html = simulation.to_html(["fps = %.1f" % (fps_estimate,)])
-            display(svg_html)
-            if save_path is not None:
-                img_path = join(save_path, "%d.svg" % (last_image,))
-                with open(img_path, "w") as f:
-                    svg_html.write_svg(f)
-                last_image += 1
+        if visualize:
+            if (frame_no + 1) % visualize_every == 0:
+                fps_estimate = frame_no / (time.time() - simulation_started_time)
+                clear_output(wait=True)
+                svg_html = simulation.to_html(["fps = %.1f" % (fps_estimate,)])
+                display(svg_html)
+                if save_path is not None:
+                    img_path = join(save_path, "%d.svg" % (last_image,))
+                    with open(img_path, "w") as f:
+                        svg_html.write_svg(f)
+                    last_image += 1
+
+        if frame_no % 1000 == 1:
+            plot_avg_reward(reward_mavg_50, save=True, filename='%s' % (LOG_FILE_DIR + 'avg_reward_' + str(frame_no) + FILE_EXT))
 
         time_should_have_passed = frame_no / fps
         time_passed = (time.time() - simulation_started_time)
@@ -120,3 +149,14 @@ def simulate(simulation,
         # if reset_every is not None:
         #     simulation.reset()
         #     frame_iterator
+
+
+def plot_avg_reward(reward_mavg_50, save=False,  filename=None):
+    fig = plt.figure()
+    plt.plot(reward_mavg_50)
+    plt.ylabel('50-window moving average Reward')
+    plt.xlabel('Time Step')
+    if save:
+        plt.savefig(filename, dpi=600)
+    else:
+        plt.show()
