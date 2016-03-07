@@ -89,6 +89,9 @@ def simulate(simulation,
     reward_history = np.array([])
     reward_mavg_50 = np.array([])
 
+    episode_num = 0
+    print 'Starting Episode %d' % (episode_num)
+
     for frame_no in frame_iterator:
         for _ in range(chunks_per_frame):
             simulation.step(chunk_length_s)
@@ -104,8 +107,6 @@ def simulate(simulation,
                 # print 'Post-50, mean: %f' % (np.mean(reward_history[-50:]))
                 reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history[-50:])])
 
-            # print reward_mavg_50.shape
-
             # store last transition
             if last_observation is not None:
                 controller.store(last_observation, last_action, reward, new_observation)
@@ -118,7 +119,6 @@ def simulate(simulation,
             if not disable_training:
                 # clear_output(wait=True)
                 controller.training_step()
-
 
             # update current state as last state.
             last_action = new_action
@@ -147,8 +147,10 @@ def simulate(simulation,
             time.sleep(time_should_have_passed - time_passed)
 
         # if reset_every is not None:
-        #     simulation.reset()
-        #     frame_iterator
+        #     if frame_no % reset_every == 1:
+        #         simulation.reset()
+        #         episode_num += 1
+        #         print 'Starting Episode %d' % episode_num
 
 
 def plot_avg_reward(reward_mavg_50, save=False,  filename=None):

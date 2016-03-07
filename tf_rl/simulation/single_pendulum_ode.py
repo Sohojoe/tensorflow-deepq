@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import random
 from scipy.integrate import odeint
 
 import tf_rl.utils.svg as svg
@@ -95,7 +96,9 @@ class SinglePendulum(object):
         e1 = self.get_energies()
 
     def reset(self):
-        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], np.pi)
+        # init_angle = random.uniform(-np.pi, np.pi)
+        init_angle = np.pi
+        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], init_angle)
         junk = self.get_positions()
         junk = self.get_energies()
         self.b1.a = self.kick()
@@ -164,17 +167,17 @@ class SinglePendulum(object):
 
     def distance(self, target_state, current_state):
         angle_dist = math.fabs(self.wrap_angle((target_state[0]-current_state[0,0])))
-        vel_dist = np.linalg.norm(target_state[1]-current_state[0,1])
-        vel_dist = 0.0
-        return angle_dist + (0.01*vel_dist)
+        vel_dist = math.fabs(target_state[1]-current_state[0,1])
+        # vel_dist = 0.0
+        return angle_dist + (0.1*vel_dist)
 
     def collect_reward(self):
         """Reward corresponds to how high is the first joint."""
         target_state = np.array([0.0, 0.0])
         current_state = np.matrix([self.b1.theta, self.b1.v])
         distance = self.distance(target_state, current_state)
-        action_cost = -0.2 * math.fabs(self.control_input)
-        return (2*math.pi + 4.4 - distance) + action_cost
+        action_cost = -0.5 * math.fabs(self.control_input)
+        return (math.pi + 4.4 - distance) + action_cost
 
     def to_html(self, info=[]):
         """Visualize"""

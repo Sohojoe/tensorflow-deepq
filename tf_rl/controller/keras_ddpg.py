@@ -29,11 +29,11 @@ class KerasDDPG(object):
                        exploration_period=10000,
                        store_every_nth=4,
                        train_every_nth=4,
-                       minibatch_size=128,
+                       minibatch_size=64,
                        discount_rate=0.99,
                        max_experience=100000,
-                       target_actor_update_rate=0.01,
-                       target_critic_update_rate=0.01):
+                       target_actor_update_rate=0.001,
+                       target_critic_update_rate=0.001):
         """Initialized the Deepq object.
 
         Based on:
@@ -131,7 +131,7 @@ class KerasDDPG(object):
         self.target_actor_lr = K.variable(self.target_actor_update_rate)
         self.target_critic_lr = K.variable(self.target_critic_update_rate)
 
-        self.policy_updater = K.function(inputs=[self.critic.model.get_input(train=False), self.actor.model.get_input(train=False)], outputs=[], updates=self.policy_updates)
+        self.policy_updater = K.function(inputs=[self.critic.model.get_input(train=False)['state'], self.critic.model.get_input(train=False)['action'], self.actor.model.get_input(train=False)], outputs=[], updates=self.policy_updates)
 
         self.target_critic_updates = self.get_target_critic_updates()
         self.target_critic_updater = K.function(inputs=[], outputs=[], updates=self.target_critic_updates)
@@ -145,10 +145,11 @@ class KerasDDPG(object):
         self.tensor_board_cb = callbacks.TensorBoard()
         self.bellman_error = []
 
+        self.num_training_iters = 5
+
     def policy_gradients(self):
-        c_grads = K.gradients(self.critic.model.get_output(train=False), self.critic.model.get_input(train=False))[0]
-        _, _, action_q_grad = tf.split(1, 3, c_grads)
-        p_grads = [K.gradients(self.actor.model.get_output(train=False), z, grad_ys=action_q_grad)[0] for z in self.actor.model.trainable_weights]
+        c_grads = K.gradients(self.critic.model.get_output(train=False)['value_output'], self.critic.model.get_input(train=False)['action'])[0]
+        p_grads = [K.gradients(self.actor.model.get_output(train=False), z, grad_ys=c_grads)[0] for z in self.actor.model.trainable_weights]
         for i, pg in enumerate(p_grads):
             p_grads[i] = pg / self.minibatch
         return p_grads
@@ -216,7 +217,7 @@ class KerasDDPG(object):
                     states[i*len(x[0])+j,1] = y[i,j] / (2.0 * math.pi)
                     # states[i*len(y)+j,3] = 0
 
-            q_0v_angle = self.critic(np.concatenate((states, actions), axis=1))
+            q_0v_angle = self.critic(states, actions)
 
             new_q = np.zeros_like(x)
             for i in range(len(q_0v_angle)):
@@ -322,70 +323,37 @@ class KerasDDPG(object):
         self.training_steps += 1
         print 'Starting training step %d at %s' % (self.training_steps, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)))
 
-        # sample experience (need to be a two liner, because deque...)
-        samples = random.sample(range(len(self.experience)), self.minibatch_size)
-        samples = [self.experience[i] for i in samples]
-        time_marker1 = time.time()
-        # print 'Minibatch sampling from exp took %f seconds' % (time_marker1 - start_time)
-
-        # batch states
-        states = np.empty((len(samples), self.observation_size))
-        newstates = np.empty((len(samples), self.observation_size))
-        actions = np.zeros((len(samples), self.action_size))
-        target_actions = np.zeros((len(samples), self.action_size))
-        rewards = np.empty((len(samples),1))
-        time_marker2 = time.time()
-        # print 'Memory allocation took %f seconds' % (time_marker2 - time_marker1)
-
-        for i, (state, action, reward, newstate) in enumerate(samples):
-            states[i] = state
-            actions[i] = action
-            rewards[i] = reward
-            newstates[i] = newstate
-
-        time_marker1 = time.time()
-        # print 'Sample enumeration took %f seconds' % (time_marker1 - time_marker2)
-
-        for i, state in enumerate(newstates):
-            target_actions[i] = self.target_action(state)
-
-        time_marker2 = time.time()
-        # print 'Target action retrieval took %f seconds' % (time_marker2 - time_marker1)
-
-        target_y = rewards + self.discount_rate * self.target_critic(np.concatenate((newstates, target_actions), axis=1))
-        assert isinstance(self.critic.model, Sequential)
-        time_marker1 = time.time()
-        # print 'Target Y val took %f seconds' % (time_marker1 - time_marker2)
-        # Update critic
-        # self.critic.model.fit(np.concatenate((states, actions), axis=1), target_y, batch_size=len(samples), nb_epoch=1, verbose=0, callbacks=[self.tensor_board_cb])
-        history = self.critic.model.fit(np.concatenate((states, actions), axis=1), target_y, batch_size=len(samples), nb_epoch=1, verbose=0)
-        self.bellman_error.append(history.history['loss'][0])
-
-        time_marker2 = time.time()
-        # print 'Critic model fitting took %f seconds' % (time_marker2 - time_marker1)
-        # Update actor policy
-        policy_actions = np.zeros((len(samples), self.action_size))
-        for i, state in enumerate(states):
-            policy_actions[i] = self.actor(state)
-
-        time_marker1 = time.time()
-        # print 'Action retrieval took %f seconds' % (time_marker1 - time_marker2)
-
-        critic_xs = np.matrix(np.concatenate((states, policy_actions), axis=1))
-        actor_xs = np.matrix(states)
-        self.policy_updater([critic_xs, actor_xs])
-
-        time_marker2 = time.time()
-        # print 'Policy gradient and update calcs took %f seconds' % (time_marker2 - time_marker1)
-
-        self.target_critic_updater([])
-        self.target_actor_updater([])
-
-        time_marker1 = time.time()
-        # print 'Target network updates took %f seconds' % (time_marker1 - time_marker2)
-        # print '--------------------------------------'
-        # print 'Total time spent in training iterations was %f seconds' % (time_marker1 - start_time)
-        # time.sleep(1.0)
+        for k in range(self.num_training_iters):
+            # sample experience (need to be a two liner, because deque...)
+            samples = random.sample(range(len(self.experience)), self.minibatch_size)
+            samples = [self.experience[i] for i in samples]
+            # batch states
+            states = np.empty((len(samples), self.observation_size))
+            newstates = np.empty((len(samples), self.observation_size))
+            actions = np.zeros((len(samples), self.action_size))
+            target_actions = np.zeros((len(samples), self.action_size))
+            rewards = np.empty((len(samples),1))
+            for i, (state, action, reward, newstate) in enumerate(samples):
+                states[i] = state
+                actions[i] = action
+                rewards[i] = reward
+                newstates[i] = newstate
+            for i, state in enumerate(newstates):
+                target_actions[i] = self.target_action(state)
+            target_y = rewards + self.discount_rate * self.target_critic(newstates, target_actions)
+            # Update critic
+            # self.critic.model.fit(np.concatenate((states, actions), axis=1), target_y, batch_size=len(samples), nb_epoch=1, verbose=0, callbacks=[self.tensor_board_cb])
+            history = self.critic.model.fit({'state': states, 'action': actions, 'value_output': target_y}, batch_size=len(samples), nb_epoch=1, verbose=0)
+            self.bellman_error.append(history.history['loss'][0])
+            # Update actor policy
+            policy_actions = np.zeros((len(samples), self.action_size))
+            for i, state in enumerate(states):
+                policy_actions[i] = self.actor(state)
+            # critic_xs = np.matrix(np.concatenate((states, policy_actions), axis=1))
+            actor_xs = np.matrix(states)
+            self.policy_updater([np.matrix(states), np.matrix(policy_actions), actor_xs])
+            self.target_critic_updater([])
+            self.target_actor_updater([])
 
         if self.training_steps % 100 == 1:
             self.plot_critic_value_function(save=True, filename='%s' % (LOG_FILE_DIR + 'critic_' + str(self.training_steps) + FILE_EXT))

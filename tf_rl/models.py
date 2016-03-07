@@ -1,9 +1,10 @@
 import math
 import tensorflow as tf
-from keras.models import Sequential
+from keras.models import Sequential, Graph
 from keras.layers.core import Dense, Activation
 from keras.layers.normalization import BatchNormalization
 from keras.optimizers import SGD, RMSprop, Adam
+from keras.regularizers import l2
 from keras import backend as K
 from keras.utils import np_utils
 
@@ -100,8 +101,9 @@ class MLP(object):
 def custom_initialization(shape, scale=0.003, name=None):
     return K.variable(np.random.uniform(low=-scale, high=scale, size=shape), name=name)
 
+
 class KERASMLP(object):
-    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None):
+    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None, regularizer=False):
         self.input_sizes = input_sizes
 
         # if type(self.input_sizes) != list:
@@ -112,6 +114,7 @@ class KERASMLP(object):
         self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
         self.scope = scope or "MLP"
         self.input_weights = weights
+        self.use_regularization = regularizer
 
         assert len(hiddens) == len(nonlinearities), \
                 "Number of hiddens must be equal to number of nonlinearities"
@@ -120,18 +123,32 @@ class KERASMLP(object):
 
         #self.model.add(BatchNormalization(input_shape=[self.input_sizes]))
         #self.model.add(Dense(hiddens[0], init="lecun_uniform"))
-        self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
+        if regularizer:
+            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform", W_regularizer=l2(0.01)))
+        else:
+            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
         self.model.add(Activation(self.input_nonlinearity))
         #self.model.add(BatchNormalization())
         for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
-            self.model.add(Dense(h_to, init='lecun_uniform'))
+            if regularizer:
+                self.model.add(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.01)))
+            else:
+                self.model.add(Dense(h_to, init='lecun_uniform'))
+
             self.model.add(Activation(self.layer_nonlinearities[l_idx]))
             #self.model.add(BatchNormalization())
 
-        self.model.add(Dense(hiddens[-1], init=custom_initialization))
+
+        if regularizer:
+            self.model.add(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)))
+        else:
+            self.model.add(Dense(hiddens[-1], init=custom_initialization))
         self.model.add(Activation(self.layer_nonlinearities[-1]))
 
-        self.opt = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+        lr = 0.0001
+        if regularizer:
+            lr = 0.001
+        self.opt = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
         self.model.compile(loss='MSE', optimizer=self.opt)
         if weights is not None:
             self.model.set_weights(weights)
@@ -166,6 +183,167 @@ class KERASMLP(object):
         #     print ' '
         # print '#####################'
 
-        return KERASMLP(self.input_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights())
+        return KERASMLP(self.input_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights(), regularizer=self.use_regularization)
 
 
+class PolicyMLP(object):
+    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None, regularizer=False):
+        self.input_sizes = input_sizes
+
+        # if type(self.input_sizes) != list:
+        #     self.input_sizes = [self.input_sizes]
+
+        self.hiddens = hiddens
+        self.nonlinearities = nonlinearities
+        self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
+        self.scope = scope or "MLP"
+        self.input_weights = weights
+        self.use_regularization = regularizer
+
+        assert len(hiddens) == len(nonlinearities), \
+                "Number of hiddens must be equal to number of nonlinearities"
+
+        self.model = Sequential()
+        if regularizer:
+            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform", W_regularizer=l2(0.01)))
+        else:
+            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
+        self.model.add(Activation(self.input_nonlinearity))
+        for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
+            if regularizer:
+                self.model.add(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.01)))
+            else:
+                self.model.add(Dense(h_to, init='lecun_uniform'))
+
+            self.model.add(Activation(self.layer_nonlinearities[l_idx]))
+
+        if regularizer:
+            self.model.add(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)))
+        else:
+            self.model.add(Dense(hiddens[-1], init=custom_initialization))
+        self.model.add(Activation(self.layer_nonlinearities[-1]))
+
+        lr = 0.0001
+        self.opt = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+        self.model.compile(loss='MSE', optimizer=self.opt)
+        if weights is not None:
+            self.model.set_weights(weights)
+
+    def __call__(self, xs):
+        if len(xs) > 1:
+            xs = np.matrix(xs)
+        xs[0,0] = xs[0,0] / np.pi
+        xs[0,1] = xs[0,1] / (2.0 * np.pi)
+        # xs[0,2] = xs[0,2] / np.pi
+        # xs[0,3] = xs[0,3] / 20.0
+        return self.model.predict([xs], batch_size=len(xs))
+
+    def variables(self):
+        return self.model.get_weights()
+
+    def save(self, filepath):
+        self.model.save_weights(filepath, overwrite=False)
+
+    def restore(self, filepath):
+        self.model.load_weights(filepath)
+
+    def copy(self, scope=None):
+        return PolicyMLP(self.input_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights(), regularizer=self.use_regularization)
+
+
+class ValueMLP(object):
+    def __init__(self, state_sizes, action_sizes, hiddens, nonlinearities, scope=None, given_layers=None, weights=None, regularizer=False):
+        self.state_sizes = state_sizes
+        self.action_sizes = action_sizes
+
+        # if type(self.input_sizes) != list:
+        #     self.input_sizes = [self.input_sizes]
+
+        self.hiddens = hiddens
+        self.nonlinearities = nonlinearities
+        self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
+        self.scope = scope or "MLP"
+        self.input_weights = weights
+        self.use_regularization = regularizer
+
+        assert len(hiddens) == len(nonlinearities), \
+                "Number of hiddens must be equal to number of nonlinearities"
+
+        # Create Graph for full model
+        self.model = Graph()
+        self.model.add_input('state', input_shape=(self.state_sizes,))
+        self.model.add_input('action', input_shape=(self.action_sizes,))
+
+        # Create Sequential container for state processing
+        self.state_proc = Sequential()
+        if regularizer:
+            # self.state_proc.add(BatchNormalization(input_shape=[self.state_sizes]))
+            self.state_proc.add(Dense(hiddens[0], input_dim=self.state_sizes, init="lecun_uniform", W_regularizer=l2(0.01)))
+            self.state_proc.add(Activation(self.input_nonlinearity))
+        else:
+            self.state_proc.add(Dense(hiddens[0], input_dim=self.state_sizes, init="lecun_uniform"))
+            self.state_proc.add(Activation(self.input_nonlinearity))
+
+        # Add State Processer to Graph
+        self.model.add_node(self.state_proc, name='state_proc', input='state')
+
+        # Add Dense Layer to combine state processor with action input
+        if regularizer:
+            self.model.add_node(Dense(hiddens[1], init='lecun_uniform', W_regularizer=l2(0.01)), name='joiner', inputs=['state_proc', 'action'])
+        else:
+            self.model.add_node(Dense(hiddens[1], init='lecun_uniform'), name='joiner', inputs=['state_proc', 'action'])
+        self.model.add_node(Activation(self.layer_nonlinearities[0]), name='activation_0', input='joiner')
+
+        if len(self.hiddens) > 3:
+            # Add remaining hidden layers
+            last_idx = 0
+            for l_idx, (h_from, h_to) in enumerate(zip(hiddens[1:-2], hiddens[2:-1])):
+                if regularizer:
+                    self.model.add_node(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.01)), name='dense_%d'%(l_idx+1), input='activation_%d'%(l_idx))
+                else:
+                    self.model.add_node(Dense(h_to, init='lecun_uniform'), name='dense_%d'%(l_idx+1), input='activation_%d'%(l_idx))
+                self.model.add_node(Activation(self.layer_nonlinearities[l_idx+1]), name='activation_%d'%(l_idx+1), input='dense_%d'%(l_idx+1))
+                last_idx = l_idx
+
+            if regularizer:
+                self.model.add_node(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)), name='dense_out', input='activation_%d'%(last_idx+1))
+            else:
+                self.model.add_node(Dense(hiddens[-1], init=custom_initialization), name='dense_out', input='activation_%d'%(last_idx+1))
+            self.model.add_node(Activation(self.layer_nonlinearities[-1]), name='activation_out', input='dense_out')
+        else:
+            if regularizer:
+                self.model.add_node(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)), name='dense_out', input='activation_0')
+            else:
+                self.model.add_node(Dense(hiddens[-1], init=custom_initialization), name='dense_out', input='activation_0')
+            self.model.add_node(Activation(self.layer_nonlinearities[-1]), name='activation_out', input='dense_out')
+
+        self.model.add_output(name='value_output', input='activation_out')
+
+        lr = 0.001
+        self.opt = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+        self.model.compile(loss={'value_output': 'MSE'}, optimizer=self.opt)
+        if weights is not None:
+            self.model.set_weights(weights)
+
+    def __call__(self, xs, xa):
+        if len(xs) > 1:
+            xs = np.matrix(xs)
+        if len(xa) > 1:
+            xa = np.matrix(xa)
+        # xs[0,0] = xs[0,0] / np.pi
+        # xs[0,1] = xs[0,1] / (2.0 * np.pi)
+        # xs[0,2] = xs[0,2] / np.pi
+        # xs[0,3] = xs[0,3] / 20.0
+        return self.model.predict({'state': xs, 'action': xa}, batch_size=len(xs))['value_output']
+
+    def variables(self):
+        return self.model.get_weights()
+
+    def save(self, filepath):
+        self.model.save_weights(filepath, overwrite=False)
+
+    def restore(self, filepath):
+        self.model.load_weights(filepath)
+
+    def copy(self, scope=None):
+        return ValueMLP(self.state_sizes, self.action_sizes, self.hiddens, self.nonlinearities, scope=scope, weights=self.model.get_weights(), regularizer=self.use_regularization)
