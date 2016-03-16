@@ -10,7 +10,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-LOG_FILE_DIR = '/home/mderry/tensorflow-deepq/notebooks/logs/pendulum_'
+LOG_FILE_DIR = '/home/mderry/logs/rl_logs/pendulum_'
 FILE_EXT = '.png'
 
 
@@ -87,7 +87,8 @@ def simulate(simulation,
     frame_iterator = count() if max_frames is None else range(max_frames)
 
     reward_history = np.array([])
-    reward_mavg_50 = np.array([])
+    reward_ep_std = np.array([])
+    reward_ep_avg = np.array([])
 
     episode_num = 0
     print 'Starting Episode %d' % (episode_num)
@@ -100,12 +101,12 @@ def simulate(simulation,
             new_observation = simulation.observe()
             reward = simulation.collect_reward()
             reward_history = np.append(reward_history, [reward])
-            if len(reward_history) <= 50:
-                # print 'Sub-50, mean: %f' % (np.mean(reward_history))
-                reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history)])
-            else:
-                # print 'Post-50, mean: %f' % (np.mean(reward_history[-50:]))
-                reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history[-50:])])
+            # if len(reward_history) <= 50:
+            #     # print 'Sub-50, mean: %f' % (np.mean(reward_history))
+            #     reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history)])
+            # else:
+            #     # print 'Post-50, mean: %f' % (np.mean(reward_history[-50:]))
+            #     reward_mavg_50 = np.append(reward_mavg_50, [np.mean(reward_history[-50:])])
 
             # store last transition
             if last_observation is not None:
@@ -138,27 +139,35 @@ def simulate(simulation,
                         svg_html.write_svg(f)
                     last_image += 1
 
-        if frame_no % 1000 == 1:
-            plot_avg_reward(reward_mavg_50, save=True, filename='%s' % (LOG_FILE_DIR + 'avg_reward_' + str(frame_no) + FILE_EXT))
+        # if frame_no % 1000 == 1:
+        #     plot_avg_reward(reward_mavg_50, save=True, filename='%s' % (LOG_FILE_DIR + 'avg_reward_' + str(frame_no) + FILE_EXT))
 
         time_should_have_passed = frame_no / fps
         time_passed = (time.time() - simulation_started_time)
         if wait and (time_should_have_passed > time_passed):
             time.sleep(time_should_have_passed - time_passed)
 
-        # if reset_every is not None:
-        #     if frame_no % reset_every == 1:
-        #         simulation.reset()
-        #         episode_num += 1
-        #         print 'Starting Episode %d' % episode_num
+        if reset_every is not None:
+            if frame_no % reset_every == 1:
+                reward_ep_avg = np.append(reward_ep_avg, [np.mean(reward_history)])
+                reward_ep_std = np.append(reward_ep_std, [np.std(reward_history)])
+                reward_history = np.array([])
+                plot_avg_reward(reward_ep_avg, reward_ep_std, save=True, filename='%s' % (LOG_FILE_DIR + 'avg_reward_' + str(episode_num) + FILE_EXT))
+                simulation.reset()
+                last_action = None
+                last_observation = None
+                episode_num += 1
+                print 'Starting Episode %d' % episode_num
 
 
-def plot_avg_reward(reward_mavg_50, save=False,  filename=None):
+def plot_avg_reward(reward_avg, reward_std, save=False,  filename=None):
     fig = plt.figure()
-    plt.plot(reward_mavg_50)
-    plt.ylabel('50-window moving average Reward')
-    plt.xlabel('Time Step')
+    plt.plot(reward_avg)
+    plt.fill_between(np.arange(len(reward_avg)), reward_avg+reward_std, reward_avg-reward_std, facecolor='blue', alpha=0.3)
+    plt.ylabel('Average Reward')
+    plt.xlabel('Episode')
     if save:
         plt.savefig(filename, dpi=600)
     else:
         plt.show()
+    plt.close()

@@ -8,6 +8,8 @@ from collections import defaultdict
 from euclid import Circle, Point2, Vector2, LineSegment2
 
 import tf_rl.utils.svg as svg
+from tf_rl.simulation.simulation import BaseSimulation
+
 
 class GameObject(object):
     def __init__(self, position, speed, obj_type, settings):
@@ -49,9 +51,11 @@ class GameObject(object):
         color = self.settings["colors"][self.obj_type]
         return svg.Circle(self.position + Point2(10, 10), self.radius, color=color)
 
-class KarpathyGame(object):
+
+class KarpathyGame(BaseSimulation):
     def __init__(self, settings):
         """Initiallize game simulator with settings"""
+        BaseSimulation.__init__(self)
         self.settings = settings
         self.size  = self.settings["world_size"]
         self.walls = [LineSegment2(Point2(0,0),                        Point2(0,self.size[1])),
@@ -86,6 +90,9 @@ class KarpathyGame(object):
         self.num_actions      = len(self.directions)
 
         self.objects_eaten = defaultdict(lambda: 0)
+
+    def reset(self):
+        pass
 
     def perform_action(self, action_id):
         """Change speed to one of hero vectors"""

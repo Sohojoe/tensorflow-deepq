@@ -2,11 +2,15 @@ from random import randint, gauss
 
 import numpy as np
 
-class DiscreteHill(object):
+from tf_rl.simulation.simulation import BaseSimulation
+
+
+class DiscreteHill(BaseSimulation):
 
     directions = [(0,1), (0,-1), (1,0), (-1,0)]
 
     def __init__(self, board=(10,10), variance=4.):
+        BaseSimulation.__init__(self)
         self.variance = variance
         self.target = (0,0)
         while self.target == (0,0):
@@ -40,3 +44,12 @@ class DiscreteHill(object):
     def collect_reward(self, action):
         return -DiscreteHill.distance(self.target, DiscreteHill.add(self.position, DiscreteHill.directions[action])) \
             + DiscreteHill.distance(self.target, self.position) - 2
+
+    def to_html(self, stats=[]):
+        pass
+
+    def reset(self):
+        pass
+
+    def step(self, dt):
+        pass

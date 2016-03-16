@@ -3,6 +3,7 @@ import numpy as np
 from scipy.integrate import odeint
 
 import tf_rl.utils.svg as svg
+from tf_rl.simulation.simulation import BaseSimulation
 
 g = -9.8
 
@@ -62,7 +63,7 @@ def ext_kick_wrapper(y0, t, b1, b2, control_input, damping):
     return res
 
 
-class DoublePendulum2(object):
+class DoublePendulum2(BaseSimulation):
     observation_size = 4
     action_size      = 1
 
@@ -99,6 +100,7 @@ class DoublePendulum2(object):
             maximum value of angular force applied
             to the first joint
         """
+        BaseSimulation.__init__(self)
         self.control_input = 0.0
         self.params = params
         self.size = (400, 300)

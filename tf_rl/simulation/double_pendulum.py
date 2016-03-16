@@ -2,9 +2,10 @@ import math
 import numpy as np
 
 import tf_rl.utils.svg as svg
+from tf_rl.simulation.simulation import BaseSimulation
 
 
-class DoublePendulum(object):
+class DoublePendulum(BaseSimulation):
     observation_size = 4
     action_size      = 1
 
@@ -41,6 +42,7 @@ class DoublePendulum(object):
             maximum value of angular force applied
             to the first joint
         """
+        BaseSimulation.__init__(self)
         self.state = np.array([3.1415, 0.0, 3.1415, 0.0])
         self.state = self.state.reshape((1,4))
         self.control_input = 0.0

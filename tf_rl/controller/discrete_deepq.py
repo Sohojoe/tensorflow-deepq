@@ -3,8 +3,9 @@ import random
 import tensorflow as tf
 
 from collections import deque
+from tf_rl.controller.controller import BaseController
 
-class DiscreteDeepQ(object):
+class DiscreteDeepQ(BaseController):
     def __init__(self, observation_size,
                        num_actions,
                        observation_to_actions,
@@ -75,6 +76,7 @@ class DiscreteDeepQ(object):
         summary_writer: tf.train.SummaryWriter
             writer to log metrics
         """
+        BaseController.__init__(self)
         # memorize arguments
         self.observation_size          = observation_size
         self.num_actions               = num_actions

@@ -4,7 +4,10 @@ import tensorflow as tf
 
 from collections import deque
 
-class ContinuousDeepQ(object):
+from tf_rl.controller.controller import BaseController
+
+
+class ContinuousDeepQ(BaseController):
     def __init__(self, observation_size,
                        action_size,
                        actor,
@@ -80,6 +83,7 @@ class ContinuousDeepQ(object):
         summary_writer: tf.train.SummaryWriter
             writer to log metrics
         """
+        BaseController.__init__(self)
         # memorize arguments
         self.observation_size          = observation_size
         self.action_size               = action_size

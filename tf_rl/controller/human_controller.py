@@ -1,10 +1,12 @@
 from tf_rl.utils.getch import getch
 from redis import StrictRedis
 
+from tf_rl.controller.controller import BaseController
 
 
-class HumanController(object):
+class HumanController(BaseController):
     def __init__(self, mapping):
+        BaseController.__init__(self)
         self.mapping = mapping
         self.r = StrictRedis()
         self.experience = []
@@ -17,7 +19,6 @@ class HumanController(object):
 
     def training_step(self):
         pass
-
 
 
 def control_me():

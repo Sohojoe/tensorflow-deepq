@@ -96,8 +96,8 @@ class SinglePendulum(object):
         e1 = self.get_energies()
 
     def reset(self):
-        # init_angle = random.uniform(-np.pi, np.pi)
-        init_angle = np.pi
+        init_angle = random.uniform(-np.pi, np.pi)
+        # init_angle = np.pi
         self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], init_angle)
         junk = self.get_positions()
         junk = self.get_energies()
@@ -176,7 +176,7 @@ class SinglePendulum(object):
         target_state = np.array([0.0, 0.0])
         current_state = np.matrix([self.b1.theta, self.b1.v])
         distance = self.distance(target_state, current_state)
-        action_cost = -0.5 * math.fabs(self.control_input)
+        action_cost = -0.1 * math.fabs(self.control_input)
         return (math.pi + 4.4 - distance) + action_cost
 
     def to_html(self, info=[]):
