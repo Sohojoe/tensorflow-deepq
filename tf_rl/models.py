@@ -204,29 +204,23 @@ class PolicyMLP(object):
         assert len(hiddens) == len(nonlinearities), \
                 "Number of hiddens must be equal to number of nonlinearities"
 
-        self.model = Sequential()
-        if regularizer:
-            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform", W_regularizer=l2(0.01)))
-        else:
-            self.model.add(Dense(hiddens[0], input_dim=input_sizes, init="lecun_uniform"))
-        self.model.add(LeakyReLU(alpha=0.1))
+        self.model = Graph()
+        self.model.add_input('state', input_shape=(self.input_sizes,))
+        self.model.add_node(Dense(hiddens[0], init='lecun_uniform', W_regularizer=l2(0.1)), name='layer_0', input='state')
+        self.model.add_node(Activation('relu'), name='activation_0', input='layer_0')
+        last_layer = 0
         for l_idx, (h_from, h_to) in enumerate(zip(hiddens[:-2], hiddens[1:-1])):
-            if regularizer:
-                self.model.add(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.01)))
-            else:
-                self.model.add(Dense(h_to, init='lecun_uniform'))
+            self.model.add_node(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.1)), name='layer_%d'%(l_idx+1), input='activation_%d'%(l_idx))
+            self.model.add_node(Activation('relu'), name='activation_%d'%(l_idx+1), input='layer_%d'%(l_idx+1))
+            last_layer = l_idx+1
 
-            self.model.add(LeakyReLU(alpha=0.1))
+        self.model.add_node(Dense(hiddens[-1], init='lecun_uniform', W_regularizer=l2(0.1)), name='layer_out', input='layer_%d'%last_layer)
+        self.model.add_node(Activation('tanh'), name='activation_out', input='layer_out')
+        self.model.add_output(name='policy_output', input='activation_out')
 
-        if regularizer:
-            self.model.add(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)))
-        else:
-            self.model.add(Dense(hiddens[-1], init=custom_initialization))
-        self.model.add(Activation('tanh'))
-
-        lr = 0.01
+        lr = 0.0001
         self.opt = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
-        self.model.compile(loss='MSE', optimizer=self.opt)
+        self.model.compile(loss={'policy_output': 'MSE'}, optimizer=self.opt)
         if weights is not None:
             self.model.set_weights(weights)
 
@@ -237,7 +231,7 @@ class PolicyMLP(object):
         xs[0,1] = 2.0/(1.0 + math.exp(-0.25*xs[0,1])) - 1.0
         # xs[0,2] = xs[0,2] / np.pi
         # xs[0,3] = xs[0,3] / 20.0
-        return self.model.predict([xs], batch_size=len(xs))
+        return self.model.predict({'state': xs}, batch_size=len(xs))['policy_output']
 
     def variables(self):
         return self.model.get_weights()
@@ -279,48 +273,48 @@ class ValueMLP(object):
         self.state_proc = Sequential()
         if regularizer:
             # self.state_proc.add(BatchNormalization(input_shape=[self.state_sizes]))
-            self.state_proc.add(Dense(hiddens[0], input_dim=self.state_sizes, init="lecun_uniform", W_regularizer=l2(0.01)))
-            self.state_proc.add(LeakyReLU(alpha=0.1))
+            self.state_proc.add(Dense(hiddens[0], input_dim=self.state_sizes, init="lecun_uniform", W_regularizer=l2(0.1)))
+            self.state_proc.add(Activation('relu'))
         else:
             self.state_proc.add(Dense(hiddens[0], input_dim=self.state_sizes, init="lecun_uniform"))
-            self.state_proc.add(LeakyReLU(alpha=0.1))
+            self.state_proc.add(Activation('relu'))
 
         # Add State Processer to Graph
         self.model.add_node(self.state_proc, name='state_proc', input='state')
 
         # Add Dense Layer to combine state processor with action input
         if regularizer:
-            self.model.add_node(Dense(hiddens[1], init='lecun_uniform', W_regularizer=l2(0.01)), name='joiner', inputs=['state_proc', 'action'])
+            self.model.add_node(Dense(hiddens[1], init='lecun_uniform', W_regularizer=l2(0.1)), name='joiner', inputs=['state_proc', 'action'])
         else:
             self.model.add_node(Dense(hiddens[1], init='lecun_uniform'), name='joiner', inputs=['state_proc', 'action'])
-        self.model.add_node(LeakyReLU(alpha=0.1), name='activation_0', input='joiner')
+        self.model.add_node(Activation('relu'), name='activation_0', input='joiner')
 
         if len(self.hiddens) > 3:
             # Add remaining hidden layers
             last_idx = 0
             for l_idx, (h_from, h_to) in enumerate(zip(hiddens[1:-2], hiddens[2:-1])):
                 if regularizer:
-                    self.model.add_node(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.01)), name='dense_%d'%(l_idx+1), input='activation_%d'%(l_idx))
+                    self.model.add_node(Dense(h_to, init='lecun_uniform', W_regularizer=l2(0.1)), name='dense_%d'%(l_idx+1), input='activation_%d'%(l_idx))
                 else:
                     self.model.add_node(Dense(h_to, init='lecun_uniform'), name='dense_%d'%(l_idx+1), input='activation_%d'%(l_idx))
-                self.model.add_node(LeakyReLU(alpha=0.1), name='activation_%d'%(l_idx+1), input='dense_%d'%(l_idx+1))
+                self.model.add_node(Activation('relu'), name='activation_%d'%(l_idx+1), input='dense_%d'%(l_idx+1))
                 last_idx = l_idx
 
             if regularizer:
                 self.model.add_node(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)), name='dense_out', input='activation_%d'%(last_idx+1))
             else:
                 self.model.add_node(Dense(hiddens[-1], init=custom_initialization), name='dense_out', input='activation_%d'%(last_idx+1))
-            self.model.add_node(LeakyReLU(alpha=0.1), name='activation_out', input='dense_out')
+            self.model.add_node(Activation('relu'), name='activation_out', input='dense_out')
         else:
             if regularizer:
-                self.model.add_node(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.01)), name='dense_out', input='activation_0')
+                self.model.add_node(Dense(hiddens[-1], init=custom_initialization, W_regularizer=l2(0.1)), name='dense_out', input='activation_0')
             else:
                 self.model.add_node(Dense(hiddens[-1], init=custom_initialization), name='dense_out', input='activation_0')
             self.model.add_node(Activation('linear'), name='activation_out', input='dense_out')
 
         self.model.add_output(name='value_output', input='activation_out')
 
-        lr = 0.01
+        lr = 0.001
         self.opt = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
         self.model.compile(loss={'value_output': 'MSE'}, optimizer=self.opt)
         if weights is not None:

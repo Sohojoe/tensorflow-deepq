@@ -10,7 +10,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-LOG_FILE_DIR = '/home/mderry/logs/rl_logs/pendulum_'
+LOG_FILE_DIR = '/home/mderry/local_data/rl_logs/pendulum_'
 FILE_EXT = '.png'
 
 

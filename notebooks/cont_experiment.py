@@ -14,11 +14,12 @@ SINGLE_PENDULUM_PARAMS = {
 FPS, SPEED, RES = 60, 1., 0.01
 
 
-def main():
-    actor = PolicyMLP(SinglePendulum.observation_size, [400, 300, 1], ['relu', 'relu', 'tanh'])
-    critic = ValueMLP(SinglePendulum.observation_size, SinglePendulum.action_size,[400, 300, 1],['relu', 'relu', 'linear'], regularizer=True)
+def main(start_point_path):
+    actor = PolicyMLP(SinglePendulum.observation_size, [200, 200, 1], ['relu', 'relu', 'tanh'])
+    critic = ValueMLP(SinglePendulum.observation_size, SinglePendulum.action_size,[200, 200, 1],['relu', 'relu', 'linear'], regularizer=True)
 
-    current_controller = KerasDDPG(SinglePendulum.observation_size, SinglePendulum.action_size, actor, critic, discount_rate=0.99, exploration_period=100000)
+    current_controller = KerasDDPG(SinglePendulum.observation_size, SinglePendulum.action_size, actor, critic, discount_rate=0.99, exploration_period=40000)
+    current_controller.restore_checkpoint(start_point_path)
     try:
         while True:
             d = SinglePendulum(SINGLE_PENDULUM_PARAMS)
@@ -28,4 +29,4 @@ def main():
         print("Interrupted")
 
 if __name__ == "__main__":
-    main()
+    main('/home/mderry/logs/rl_logs/1st_half/pendulum_checkpoint_137901')

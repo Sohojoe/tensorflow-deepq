@@ -96,8 +96,8 @@ class SinglePendulum(object):
         e1 = self.get_energies()
 
     def reset(self):
-        init_angle = random.uniform(-np.pi, np.pi)
-        # init_angle = np.pi
+        # init_angle = random.uniform(-np.pi, np.pi)
+        init_angle = np.pi
         self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], init_angle)
         junk = self.get_positions()
         junk = self.get_energies()

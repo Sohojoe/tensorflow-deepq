@@ -3,23 +3,20 @@ import random
 import math
 import time
 import tensorflow as tf
-from keras.models import Sequential
-from keras.layers.core import Dense, Activation
-from keras.utils import np_utils
+from keras import optimizers
 from keras import backend as K
 from keras import callbacks
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 
-from tf_rl.models import KERASMLP
 from tf_rl.controller.controller import BaseController
 
 from collections import deque
 
-LOG_FILE_DIR = '/home/mderry/logs/rl_logs/pendulum_'
+LOG_FILE_DIR = '/home/mderry/local_data/rl_logs/pendulum_'
 FILE_EXT = '.png'
+
 
 class KerasDDPG(BaseController):
     def __init__(self, observation_size,
@@ -32,9 +29,9 @@ class KerasDDPG(BaseController):
                        train_every_nth=4,
                        minibatch_size=128,
                        discount_rate=0.99,
-                       max_experience=100000,
-                       target_actor_update_rate=0.001,
-                       target_critic_update_rate=0.001):
+                       max_experience=1000000,
+                       target_actor_update_rate=0.0001,
+                       target_critic_update_rate=0.0001):
         """Initialized the Deepq object.
 
         Based on:
@@ -123,18 +120,19 @@ class KerasDDPG(BaseController):
         # Orstein-Uhlenbeck Process (temporally correlated noise for exploration)
         self.noise_mean = 0.0
         self.max_variance = 1.0
-        self.min_variance = 0.3
+        self.min_variance = 0.01
         self.ou_theta = 0.25
         self.ou_sigma = 0.15
 
         self.minibatch = K.variable(minibatch_size)
         self.policy_learning_rate = K.variable(self.learning_rate)
-        self.policy_updates = self.get_policy_updates()
+        # self.policy_updates = self.get_policy_updates()
 
         self.target_actor_lr = K.variable(self.target_actor_update_rate)
         self.target_critic_lr = K.variable(self.target_critic_update_rate)
 
-        self.policy_updater = K.function(inputs=[self.critic.model.get_input(train=False)['state'], self.critic.model.get_input(train=False)['action'], self.actor.model.get_input(train=False)], outputs=[], updates=self.policy_updates)
+        # self.policy_updater = K.function(inputs=[self.critic.model.get_input(train=False)['state'], self.critic.model.get_input(train=False)['action'], self.actor.model.get_input(train=False)], outputs=[], updates=self.policy_updates)
+        self.policy_updater = self.get_policy_updater(self.minibatch_size)
 
         self.target_critic_updates = self.get_target_critic_updates()
         self.target_critic_updater = K.function(inputs=[], outputs=[], updates=self.target_critic_updates)
@@ -142,13 +140,11 @@ class KerasDDPG(BaseController):
         self.target_actor_updates = self.get_target_actor_updates()
         self.target_actor_updater = K.function(inputs=[], outputs=[], updates=self.target_actor_updates)
 
-        self.updates = []
-        self.network_update = K.function(inputs=[], outputs=[], updates=self.updates)
-
         self.tensor_board_cb = callbacks.TensorBoard()
         self.bellman_error = []
+        self.q_values = []
 
-        self.num_training_iters = 5
+        self.num_training_iters = 1
 
     def policy_gradients(self):
         c_grads = K.gradients(self.critic.model.get_output(train=False)['value_output'], self.critic.model.get_input(train=False)['action'])[0]
@@ -165,6 +161,64 @@ class KerasDDPG(BaseController):
             new_p = p + self.policy_learning_rate * g
             policy_updates.append((p, new_p))
         return policy_updates
+
+    def get_policy_updater(self, minibatch_size):
+        action_input_name = 'action'
+        batch_size = minibatch_size
+        shared_input_names = set(self.actor.model.inputs.keys()).intersection(set(self.critic.model.inputs.keys()))
+        critic_layer_cache = self.critic.model.layer_cache
+        actor_layer_cache = self.actor.model.layer_cache
+        self.critic.model.layer_cache = {}
+        self.actor.model.layer_cache = {}
+        for name in shared_input_names:
+            self.critic.model.inputs[name].previous = self.actor.model.inputs[name]
+            self.critic.model.inputs[action_input_name].previous = self.actor.model.outputs['policy_output']
+        output = self.critic.model.get_output(train=True)['value_output']
+        if K._BACKEND == 'tensorflow':
+            grads = K.gradients(output, self.actor.model.trainable_weights)
+            # grads[0] = tf.Print(grads[0], [grads[0]], "grads = ", summarize=10)
+            grads = [g / float(batch_size) for g in grads]
+        elif K._BACKEND == 'theano':
+            import theano.tensor as T
+            grads = T.jacobian(output.flatten(), self.actor.model.trainable_weights)
+            grads = [K.mean(g, axis=0) for g in grads]
+        else:
+            raise RuntimeError('unknown backend')
+        for name in shared_input_names:
+            del self.critic.model.inputs[name].previous
+        del self.critic.model.inputs[action_input_name].previous
+        self.critic.model.layer_cache = critic_layer_cache
+        self.actor.model.layer_cache = actor_layer_cache
+
+        # We now have the gradients (`grads`) of the combined model wrt to the actor's weights and
+        # the output (`output`). Compute the necessary updates using a clone of the actor's optimizer.
+        optimizer = self.actor.model.optimizer
+        clipnorm = optimizer.clipnorm if hasattr(optimizer, 'clipnorm') else 0.
+        clipvalue = optimizer.clipvalue if hasattr(optimizer, 'clipvalue') else 0.
+
+        def get_gradients(loss, params):
+            # We want to follow the gradient, but the optimizer goes in the opposite direction to
+            # minimize loss. Hence the double inversion.
+            assert len(grads) == len(params)
+            modified_grads = [-g for g in grads]
+            if clipnorm > 0.:
+                norm = K.sqrt(sum([K.sum(K.square(g)) for g in modified_grads]))
+                modified_grads = [optimizers.clip_norm(g, clipnorm, norm) for g in modified_grads]
+            if clipvalue > 0.:
+                modified_grads = [K.clip(g, -clipvalue, clipvalue) for g in modified_grads]
+            return modified_grads
+
+        optimizer.get_gradients = get_gradients
+        updates = optimizer.get_updates(self.actor.model.trainable_weights, self.actor.model.constraints, None)
+        updates += self.actor.model.updates  # include other updates of the actor, e.g. for BN
+
+        # Finally, combine it all into a callable function.
+        inputs = self.actor.model.get_input(train=True)
+        if isinstance(inputs, dict):
+            inputs = [inputs[name] for name in self.actor.model.input_order]
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+        return K.function(inputs, [output], updates=updates)
 
     def get_target_critic_updates(self):
         critic_updates = []
@@ -203,6 +257,27 @@ class KerasDDPG(BaseController):
             plt.plot(self.bellman_error)
             plt.xlabel('Training Step')
         plt.ylabel('Bellman Residual')
+
+        if save:
+            plt.savefig(filename, dpi=600)
+        else:
+            plt.show()
+        plt.close()
+
+    def plot_q_values(self, save=False, filename=None):
+        fig = plt.figure()
+        if len(self.q_values) > 10000:
+            step = len(self.q_values) / 100
+            plt.plot(self.q_values[1::step])
+            plt.xlabel('Training Step (in 1000s)')
+        elif len(self.q_values) > 1000:
+            step = len(self.q_values) / 1000
+            plt.plot(self.q_values[1::step])
+            plt.xlabel('Training Step (in 100s)')
+        else:
+            plt.plot(self.q_values)
+            plt.xlabel('Training Step')
+        plt.ylabel('Q-Values')
 
         if save:
             plt.savefig(filename, dpi=600)
@@ -336,13 +411,14 @@ class KerasDDPG(BaseController):
 
     def training_step(self):
         start_time = time.time()
-        if len(self.experience) < 1*self.minibatch_size:
+        if len(self.experience) < 20*self.minibatch_size:
             return
 
         self.training_steps += 1
         print 'Starting training step %d at %s' % (self.training_steps, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)))
 
         bellman_residual = []
+        q_values = []
 
         for k in range(self.num_training_iters):
             # sample experience (need to be a two liner, because deque...)
@@ -366,28 +442,30 @@ class KerasDDPG(BaseController):
             # self.critic.model.fit(np.concatenate((states, actions), axis=1), target_y, batch_size=len(samples), nb_epoch=1, verbose=0, callbacks=[self.tensor_board_cb])
             history = self.critic.model.fit({'state': states, 'action': actions, 'value_output': target_y}, batch_size=len(samples), nb_epoch=1, verbose=0)
             bellman_residual.append(history.history['loss'][0])
+
             # Update actor policy
-            policy_actions = np.zeros((len(samples), self.action_size))
-            for i, state in enumerate(states):
-                policy_actions[i] = self.actor(state)
-            # critic_xs = np.matrix(np.concatenate((states, policy_actions), axis=1))
-            actor_xs = np.matrix(states)
-            self.policy_updater([np.matrix(states), np.matrix(policy_actions), actor_xs])
+            # policy_actions = np.zeros((len(samples), self.action_size))
+            # for i, state in enumerate(states):
+            #     policy_actions[i] = self.actor(state)
+            # # critic_xs = np.matrix(np.concatenate((states, policy_actions), axis=1))
+            # actor_xs = np.matrix(states)
+            # self.policy_updater([np.matrix(states), np.matrix(policy_actions), actor_xs])
+            states = states.tolist()
+            # print type(states)
+            # print states
+            # self.policy_updater = self.get_policy_updater(self.minibatch_size)
+            q_val = self.policy_updater([states])[0].flatten()
+            q_values.append(np.mean(q_val))
+
             self.target_critic_updater([])
             self.target_actor_updater([])
 
         self.bellman_error.append(np.mean(bellman_residual))
+        self.q_values.append(np.mean(q_values))
 
-        if self.training_steps % 100 == 1:
+        if self.training_steps % 2000 == 1:
             self.plot_critic_value_function(save=True, filename='%s' % (LOG_FILE_DIR + 'critic_' + str(self.training_steps) + FILE_EXT))
             self.plot_actor_policy(save=True, filename='%s' % (LOG_FILE_DIR + 'policy_' + str(self.training_steps) + FILE_EXT))
             self.plot_bellman_residual(save=True, filename='%s' % (LOG_FILE_DIR + 'bellman_residual_' + str(self.training_steps) + FILE_EXT))
+            self.plot_q_values(save=True, filename='%s' % (LOG_FILE_DIR + 'q_values_' + str(self.training_steps) + FILE_EXT))
             self.save_checkpoint(filepath='%s' % (LOG_FILE_DIR + 'checkpoint_' + str(self.training_steps)))
-
-
-
-
-
-
-
-
