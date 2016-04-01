@@ -104,8 +104,8 @@ class DoublePendulum2(BaseSimulation):
         self.control_input = 0.0
         self.params = params
         self.size = (400, 300)
-        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], 0.1)
-        self.b2 = Bob(self.params['l2_m'], self.params['m2_kg'], 0.0)
+        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], np.pi)
+        self.b2 = Bob(self.params['l2_m'], self.params['m2_kg'], np.pi)
         self.damping = self.params['damping']
         junk = self.get_positions()
         junk = self.get_energies()
@@ -117,8 +117,8 @@ class DoublePendulum2(BaseSimulation):
         e1,e2 = self.get_energies()
 
     def reset(self):
-        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], 0.01)
-        self.b2 = Bob(self.params['l2_m'], self.params['m2_kg'], 0.0)
+        self.b1 = Bob(self.params['l1_m'], self.params['m1_kg'], np.pi)
+        self.b2 = Bob(self.params['l2_m'], self.params['m2_kg'], np.pi)
         junk = self.get_positions()
         junk = self.get_energies()
         self.b1.a, self.b2.a = self.kick()
@@ -227,14 +227,14 @@ class DoublePendulum2(BaseSimulation):
         # angle_dist = 0.0
         vel_dist = np.linalg.norm(target_state[1]-current_state[0,1])
         vel_dist += np.linalg.norm(target_state[3]-current_state[0,3])
-        return angle_dist + (0.01*vel_dist)
+        return angle_dist + (0.1*vel_dist)
 
     def collect_reward(self):
         """Reward corresponds to how high is the first joint."""
         target_state = np.array([0.0, 0.0, 0.0, 0.0])
         current_state = np.matrix([self.b1.theta, self.b1.v, self.b2.theta, self.b2.v])
         distance = self.distance(target_state, current_state)
-        action_cost = -0.2 * math.fabs(self.control_input)
+        action_cost = -0.1 * math.fabs(self.control_input)
         return (2*math.pi + 4.4 - distance) + action_cost
         # _, (x,y) = self.joint_positions()
         # total_length = self.params['l1_m'] + self.params['l2_m']

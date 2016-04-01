@@ -2,7 +2,6 @@ import numpy as np
 import random
 import math
 import time
-import tensorflow as tf
 from keras import optimizers
 from keras import backend as K
 from keras import callbacks
@@ -131,7 +130,6 @@ class KerasDDPG(BaseController):
         self.target_actor_lr = K.variable(self.target_actor_update_rate)
         self.target_critic_lr = K.variable(self.target_critic_update_rate)
 
-        # self.policy_updater = K.function(inputs=[self.critic.model.get_input(train=False)['state'], self.critic.model.get_input(train=False)['action'], self.actor.model.get_input(train=False)], outputs=[], updates=self.policy_updates)
         self.policy_updater = self.get_policy_updater(self.minibatch_size)
 
         self.target_critic_updates = self.get_target_critic_updates()
@@ -398,16 +396,23 @@ class KerasDDPG(BaseController):
             self.experience.popleft()
 
     def save_checkpoint(self, filepath):
+        import pickle
         self.actor.save('%s' % (filepath + '_actor'))
         self.target_actor.save('%s' % (filepath + '_target_actor'))
         self.critic.save('%s' % (filepath + '_critic'))
         self.target_critic.save('%s' % (filepath + '_target_critic'))
+        with open('%s' % (filepath + '_exp'), 'w') as exp_file:
+            pickle.dump(self.experience, exp_file)
 
-    def restore_checkpoint(self, filepath):
+    def restore_checkpoint(self, filepath, restore_exp=False):
+        import pickle
         self.actor.restore('%s' % (filepath + '_actor'))
         self.target_actor.restore('%s' % (filepath + '_target_actor'))
         self.critic.restore('%s' % (filepath + '_critic'))
         self.target_critic.restore('%s' % (filepath + '_target_critic'))
+        if restore_exp:
+            with open('%s' % (filepath + '_exp'), 'r') as exp_file:
+                self.experience = pickle.load(exp_file)
 
     def training_step(self):
         start_time = time.time()

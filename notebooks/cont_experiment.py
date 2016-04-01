@@ -1,5 +1,5 @@
 from tf_rl.controller import KerasDDPG
-from tf_rl.models import PolicyMLP, ValueMLP
+from tf_rl.models import DDPGPolicyMLP, DDPGValueMLP
 from tf_rl.simulation import SinglePendulum
 from tf_rl import simulate
 
@@ -15,8 +15,8 @@ FPS, SPEED, RES = 60, 1., 0.01
 
 
 def main(start_point_path):
-    actor = PolicyMLP(SinglePendulum.observation_size, [200, 200, 1], ['relu', 'relu', 'tanh'])
-    critic = ValueMLP(SinglePendulum.observation_size, SinglePendulum.action_size,[200, 200, 1],['relu', 'relu', 'linear'], regularizer=True)
+    actor = DDPGPolicyMLP(SinglePendulum.observation_size, [200, 200, 1], ['relu', 'relu', 'tanh'])
+    critic = DDPGValueMLP(SinglePendulum.observation_size, SinglePendulum.action_size, [200, 200, 1], ['relu', 'relu', 'linear'])
 
     current_controller = KerasDDPG(SinglePendulum.observation_size, SinglePendulum.action_size, actor, critic, discount_rate=0.99, exploration_period=40000)
     current_controller.restore_checkpoint(start_point_path)
